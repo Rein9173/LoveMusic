@@ -122,35 +122,37 @@ autoColorInput.addEventListener("change",()=>{if(autoColorInput.checked&&cover)e
 resolutionInput.addEventListener("change",resizeCanvas);
 [titleInput,artistInput,subtitleInput,fontInput,speedInput,waveInput,titleSizeInput,artistSizeInput,subtitleSizeInput].forEach(el=>el.addEventListener("input",()=>{updateSizeLabels()}));
 
-function getWebmMimeType() {
-  const candidates = [
+function getBestMimeType() {
+  const types = [
+    "video/webm;codecs=vp9,opus",
     "video/webm;codecs=vp8,opus",
     "video/webm"
   ];
-  return candidates.find(type => MediaRecorder.isTypeSupported(type)) || null;
+  return types.find(type => MediaRecorder.isTypeSupported(type)) || null;
 }
 
-function downloadBlob(blob, ext) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  const safe = (titleInput.value || "music-visualizer").replace(/[\\/:*?"<>|]/g, "_");
-  a.download = `${safe}.${ext}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+function safeFileName() {
+  return (titleInput.value || "music-visualizer")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .trim() || "music-visualizer";
 }
 
-function fixWebmDurationIfAvailable(blob, duration) {
-  if (typeof window.fixWebmDuration !== "function") return Promise.resolve(blob);
-  return new Promise((resolve, reject) => {
-    try {
-      window.fixWebmDuration(blob, duration, fixedBlob => resolve(fixedBlob || blob));
-    } catch (error) {
-      reject(error);
-    }
-  });
+async function createFileWriter() {
+  // Chrome/Edge on HTTPS: write recording chunks directly to disk.
+  // This is the important part that prevents the whole video from accumulating in RAM.
+  if (window.showSaveFilePicker) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: `${safeFileName()}.webm`,
+      types: [{ description: "WebM video", accept: { "video/webm": [".webm"] } }]
+    });
+    const writable = await handle.createWritable();
+    return {
+      async write(chunk) { await writable.write(chunk); },
+      async close() { await writable.close(); },
+      async abort() { try { await writable.abort(); } catch {} }
+    };
+  }
+  return null;
 }
 
 async function exportVideo() {
@@ -164,7 +166,7 @@ async function exportVideo() {
     return;
   }
 
-  const mime = getWebmMimeType();
+  const mime = getBestMimeType();
   if (!mime) {
     exportStatus.textContent = "이 브라우저에서는 WebM 영상 추출을 지원하지 않아";
     return;
@@ -174,7 +176,6 @@ async function exportVideo() {
   exportButton.disabled = true;
   playButton.disabled = true;
   previewPlayButton.disabled = true;
-  exportStatus.textContent = "영상 렌더링 준비 중…";
 
   const oldTime = audio.currentTime;
   const oldVolume = audio.volume;
@@ -182,35 +183,64 @@ async function exportVideo() {
   let combined = null;
   let dest = null;
   let sourceConnected = false;
+  let writer = null;
+  let memoryChunks = [];
+  let totalBytes = 0;
 
   try {
     setupAudioGraph();
     if (audioCtx.state === "suspended") await audioCtx.resume();
 
-    const videoStream = canvas.captureStream(60);
+    const videoStream = canvas.captureStream(30);
     dest = audioCtx.createMediaStreamDestination();
     sourceNode.connect(dest);
     sourceConnected = true;
-
     combined = new MediaStream([
       ...videoStream.getVideoTracks(),
       ...dest.stream.getAudioTracks()
     ]);
 
-    const chunks = [];
+    writer = await createFileWriter();
+    if (!writer) {
+      exportStatus.textContent = "파일 저장 기능이 없는 브라우저라 메모리 방식으로 진행해…";
+    }
+
+    // 2.5 Mbps is intentionally conservative. The previous 12 Mbps setting
+    // made long recordings unnecessarily large and greatly increased RAM pressure.
     const recorder = new MediaRecorder(combined, {
       mimeType: mime,
-      videoBitsPerSecond: 12000000
+      videoBitsPerSecond: 2500000,
+      audioBitsPerSecond: 128000
     });
 
-    recorder.ondataavailable = event => {
-      if (event.data && event.data.size) chunks.push(event.data);
-    };
-
+    let writeError = null;
+    let writeChain = Promise.resolve();
     const stopped = new Promise((resolve, reject) => {
       recorder.onstop = resolve;
-      recorder.onerror = event => reject(event.error || new Error("렌더링 녹화 오류"));
+      recorder.onerror = e => reject(e.error || new Error("렌더링 녹화 오류"));
     });
+
+    recorder.ondataavailable = async e => {
+      if (!e.data || !e.data.size || writeError) return;
+      try {
+        if (writer) {
+          writeChain = writeChain.then(() => writer.write(e.data));
+          await writeChain;
+        } else {
+          // Fallback only for browsers without File System Access API.
+          // Keep the chunks rather than copying their bytes into Uint8Arrays.
+          memoryChunks.push(e.data);
+          totalBytes += e.data.size;
+          if (totalBytes > 250 * 1024 * 1024) {
+            writeError = new Error("브라우저 메모리 한도를 피하려면 Chrome 또는 Edge에서 실행해줘");
+            try { recorder.stop(); } catch {}
+          }
+        }
+      } catch (err) {
+        writeError = err;
+        try { recorder.stop(); } catch {}
+      }
+    };
 
     audio.pause();
     audio.currentTime = 0;
@@ -218,11 +248,15 @@ async function exportVideo() {
     vinylAngle = 0;
     lastAudioTime = 0;
 
-    recorder.start(250);
+    recorder.start(1000);
     await audio.play();
 
-    await new Promise(resolve => {
+    await new Promise((resolve, reject) => {
       const tick = () => {
+        if (writeError) {
+          reject(writeError);
+          return;
+        }
         if (audio.ended || audio.currentTime >= audio.duration - 0.03) {
           resolve();
           return;
@@ -235,28 +269,38 @@ async function exportVideo() {
 
     if (recorder.state !== "inactive") recorder.stop();
     await stopped;
-
-    combined.getTracks().forEach(track => track.stop());
+    await writeChain;
+    combined.getTracks().forEach(t => t.stop());
     combined = null;
 
-    const rawBlob = new Blob(chunks, { type: mime });
-    if (rawBlob.size < 10000) throw new Error("영상 렌더링 결과가 비어 있어");
+    if (writeError) throw writeError;
 
-    exportStatus.textContent = "WebM 파일 정리 중…";
-    const webmBlob = await fixWebmDurationIfAvailable(rawBlob, audio.duration * 1000);
-
-    downloadBlob(webmBlob, "webm");
-    exportStatus.textContent = "완료 · WebM 영상이 다운로드됐어";
+    if (writer) {
+      await writer.close();
+      writer = null;
+      exportStatus.textContent = "완료 · WebM 파일을 저장했어";
+    } else {
+      if (!memoryChunks.length) throw new Error("영상 렌더링 결과가 비어 있어");
+      const blob = new Blob(memoryChunks, { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeFileName()}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      memoryChunks = [];
+      exportStatus.textContent = "완료 · WebM 파일을 다운로드했어";
+    }
   } catch (err) {
     console.error(err);
+    try { if (writer) await writer.abort(); } catch {}
+    writer = null;
     exportStatus.textContent = `추출 오류 · ${err && err.message ? err.message : "알 수 없는 오류"}`;
   } finally {
-    try { if (combined) combined.getTracks().forEach(track => track.stop()); } catch {}
-    try {
-      if (sourceConnected && sourceNode && typeof sourceNode.disconnect === "function") {
-        sourceNode.disconnect(dest);
-      }
-    } catch {}
+    try { if (combined) combined.getTracks().forEach(t => t.stop()); } catch {}
+    try { if (sourceConnected && sourceNode && typeof sourceNode.disconnect === "function") sourceNode.disconnect(dest); } catch {}
     try {
       audio.pause();
       audio.currentTime = oldTime;
@@ -264,6 +308,7 @@ async function exportVideo() {
       if (!oldPaused) await audio.play();
     } catch {}
     audio.volume = oldVolume;
+    memoryChunks = [];
     isExporting = false;
     syncButtons();
   }

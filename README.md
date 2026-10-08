@@ -1,17 +1,9 @@
-# LoveMusic
+# Music Visualizer
 
-GitHub Pages에서 실행되는 브라우저 기반 음악 비주얼라이저
+브라우저에서 이미지와 음악을 합쳐 WebM 영상을 저장하는 정적 페이지입니다.
 
-- 이미지와 음악은 브라우저 안에서 처리
-- 미리보기 재생 / 탐색 바 / 볼륨 조절
-- 앨범 이미지와 LP 애니메이션
-- 파형 애니메이션
-- WebM 영상 추출 및 다운로드
-- MP4 변환용 FFmpeg는 사용하지 않음
+## 저장 방식
 
-## 중요
+Chrome/Edge에서는 파일 저장 대화상자를 통해 녹화 조각을 디스크에 순차적으로 기록합니다. 녹화 전체를 RAM에 모으지 않기 때문에 긴 영상에서 발생하던 OOM 위험을 크게 줄입니다.
 
-영상 추출은 브라우저의 MediaRecorder를 사용해 WebM으로 바로 저장해.
-WebM의 재생 시간 메타데이터가 브라우저에 따라 제대로 기록되지 않는 경우를 보완하기 위해 `fix-webm-duration`을 사용해.
-
-GitHub Pages에 `index.html`, `style.css`, `app.js`를 올리면 실행할 수 있어.
+출력은 WebM(VP9/VP8 + Opus)입니다. WebM의 탐색 가능 여부는 브라우저의 MediaRecorder/WebM muxer 구현에 따라 달라질 수 있습니다.
