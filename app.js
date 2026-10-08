@@ -143,89 +143,142 @@ function downloadBlob(blob, ext) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-let ffmpegInstance = null;
-let ffmpegLoaded = false;
-
-async function blobURLFrom(url, mime) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`FFmpeg 파일을 불러오지 못했어 (${response.status})`);
-  const blob = await response.blob();
-  return URL.createObjectURL(new Blob([blob], { type: mime }));
-}
-
-async function ensureFFmpeg() {
-  if (ffmpegLoaded && ffmpegInstance) return ffmpegInstance;
-
-  if (!window.FFmpegWASM) {
-    throw new Error("FFmpeg 라이브러리가 로드되지 않았어. 인터넷 연결을 확인해줘");
+async function validateSeekableMp4(blob, expectedDuration) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.src = url;
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("MP4 메타데이터 확인 시간이 초과됐어")), 30000);
+      video.onloadedmetadata = () => { clearTimeout(timer); resolve(); };
+      video.onerror = () => { clearTimeout(timer); reject(new Error("생성된 MP4를 브라우저에서 읽을 수 없어")); };
+    });
+    if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error("MP4에 재생 시간이 기록되지 않았어");
+    const durationDiff = Math.abs(video.duration - expectedDuration);
+    if (durationDiff > 1.5) throw new Error(`MP4 재생 시간이 맞지 않아 (${video.duration.toFixed(2)}초)`);
+    if (!video.seekable || video.seekable.length === 0) throw new Error("MP4에 탐색 가능한 재생 구간이 없어");
+    return video.duration;
+  } finally {
+    URL.revokeObjectURL(url);
   }
-
-  const FFmpegClass = window.FFmpegWASM.FFmpeg;
-  if (!FFmpegClass) throw new Error("FFmpeg 엔진을 찾지 못했어");
-
-  const ff = new FFmpegClass();
-  ff.on("log", ({ message }) => {
-    console.log("FFmpeg:", message);
-  });
-  ff.on("progress", ({ progress }) => {
-    if (isExporting && Number.isFinite(progress)) {
-      exportStatus.textContent = `MP4로 변환 중… ${Math.round(progress * 100)}%`;
-    }
-  });
-
-  exportStatus.textContent = "FFmpeg 엔진 불러오는 중… (처음 한 번만 약 32MB)";
-
-  const coreBase = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
-  const ffmpegBase = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd";
-
-  const coreURL = await blobURLFrom(`${coreBase}/ffmpeg-core.js`, "text/javascript");
-  const wasmURL = await blobURLFrom(`${coreBase}/ffmpeg-core.wasm`, "application/wasm");
-  const workerURL = await blobURLFrom(`${ffmpegBase}/814.ffmpeg.js`, "text/javascript");
-
-  await ff.load({
-    coreURL,
-    wasmURL,
-    classWorkerURL: workerURL
-  });
-
-  ffmpegInstance = ff;
-  ffmpegLoaded = true;
-  return ff;
 }
 
-async function convertWebMToMP4(webmBlob, durationMs) {
-  const ff = await ensureFFmpeg();
-  exportStatus.textContent = "MP4로 변환 중… 준비 중";
+let ffmpegWorker = null;
+let ffmpegWorkerURL = null;
 
-  await ff.writeFile("input.webm", new Uint8Array(await webmBlob.arrayBuffer()));
+async function createMp4Worker() {
+  if (ffmpegWorker) return ffmpegWorker;
 
-  const durationSec = Math.max(0.1, Number(durationMs) / 1000);
-  const exitCode = await ff.exec([
-    "-i", "input.webm",
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "20",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-b:a", "192k",
-    "-t", durationSec.toFixed(3),
-    "-movflags", "+faststart",
-    "output.mp4"
-  ]);
+  // ffmpeg.js 4.2.9003 provides a dedicated MP4 worker with H.264/AAC/MP4 support.
+  // We fetch it and create a same-origin Blob worker, avoiding GitHub Pages' cross-origin Worker restriction.
+  const workerSourceURL = "https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-worker-mp4.js";
+  exportStatus.textContent = "MP4 변환 엔진 준비 중… (처음 한 번만 오래 걸릴 수 있어)";
 
-  if (exitCode !== 0) throw new Error(`FFmpeg 변환 실패 (코드 ${exitCode})`);
+  const response = await fetch(workerSourceURL, { cache: "force-cache" });
+  if (!response.ok) throw new Error(`MP4 변환 엔진을 불러오지 못했어 (${response.status})`);
+  let source = await response.text();
 
-  const data = await ff.readFile("output.mp4");
-  const result = new Blob([data], { type: "video/mp4" });
+  // Some builds reference ffmpeg-mp4.js relative to the worker file.
+  // Make any such reference absolute so the Blob worker can still load it.
+  const moduleURL = "https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-mp4.js";
+  source = source.replace(/ffmpeg-mp4\.js/g, moduleURL);
 
-  try { await ff.deleteFile("input.webm"); } catch {}
-  try { await ff.deleteFile("output.mp4"); } catch {}
+  const blob = new Blob([source], { type: "application/javascript" });
+  ffmpegWorkerURL = URL.createObjectURL(blob);
+  ffmpegWorker = new Worker(ffmpegWorkerURL);
+  return ffmpegWorker;
+}
 
-  if (result.size < 10000) throw new Error("MP4 파일이 정상적으로 생성되지 않았어");
-  return result;
+function convertWebmToMp4(webmBlob, expectedDuration) {
+  return new Promise(async (resolve, reject) => {
+    let worker;
+    try {
+      worker = await createMp4Worker();
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    const inputData = new Uint8Array(await webmBlob.arrayBuffer());
+    let finished = false;
+    let lastError = "";
+
+    const cleanup = () => {
+      if (!worker) return;
+      worker.onmessage = null;
+      worker.onerror = null;
+    };
+    const fail = (err) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+
+    worker.onerror = (event) => {
+      fail(new Error(event.message || "MP4 변환 Worker에서 오류가 발생했어"));
+    };
+
+    worker.onmessage = async (event) => {
+      const msg = event.data || {};
+      if (msg.type === "ready") {
+        exportStatus.textContent = "MP4로 변환 중…";
+        worker.postMessage({
+          type: "run",
+          MEMFS: [{ name: "input.webm", data: inputData }],
+          arguments: [
+            "-i", "input.webm",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-y", "output.mp4"
+          ]
+        });
+      } else if (msg.type === "stderr") {
+        lastError = String(msg.data || lastError);
+        const m = lastError.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
+        if (m && Number.isFinite(expectedDuration) && expectedDuration > 0) {
+          const sec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+          const pct = clamp(sec / expectedDuration * 100, 0, 99.9);
+          exportStatus.textContent = `MP4로 변환 중… ${pct.toFixed(0)}%`;
+        }
+      } else if (msg.type === "error") {
+        fail(new Error(msg.data || "MP4 변환 오류"));
+      } else if (msg.type === "abort") {
+        fail(new Error(msg.data || "MP4 변환이 중단됐어"));
+      } else if (msg.type === "exit") {
+        if (Number(msg.data) !== 0) {
+          fail(new Error(lastError || `FFmpeg 종료 코드 ${msg.data}`));
+        }
+      } else if (msg.type === "done") {
+        try {
+          const files = msg.data && msg.data.MEMFS ? msg.data.MEMFS : [];
+          const output = files.find(f => f.name === "output.mp4");
+          if (!output || !output.data || output.data.byteLength < 10000) {
+            throw new Error(lastError || "MP4 출력 파일이 생성되지 않았어");
+          }
+          const bytes = output.data instanceof Uint8Array ? output.data : new Uint8Array(output.data);
+          const mp4Blob = new Blob([bytes], { type: "video/mp4" });
+          exportStatus.textContent = "MP4 재생 정보 확인 중…";
+          await validateSeekableMp4(mp4Blob, expectedDuration);
+          if (finished) return;
+          finished = true;
+          cleanup();
+          resolve(mp4Blob);
+        } catch (err) {
+          fail(err);
+        }
+      }
+    };
+  });
 }
 
 async function exportVideo() {
@@ -234,57 +287,58 @@ async function exportVideo() {
     exportStatus.textContent = "영상 추출 미지원 브라우저입니다.";
     return;
   }
+  if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+    exportStatus.textContent = "음악의 재생 시간을 먼저 불러와야 해";
+    return;
+  }
 
-  const selectedFormat = formatInput.value || "mp4";
   const mime = getBestMimeType();
-
   isExporting = true;
   exportButton.disabled = true;
   playButton.disabled = true;
   previewPlayButton.disabled = true;
-  exportStatus.textContent = selectedFormat === "mp4" ? "영상 렌더링 준비 중…" : "WebM 렌더링 준비 중…";
+  exportStatus.textContent = "영상 렌더링 준비 중…";
 
   const oldTime = audio.currentTime, oldVolume = audio.volume, oldPaused = audio.paused;
   let combined = null;
+  let dest = null;
+  let sourceConnected = false;
 
   try {
     setupAudioGraph();
     if (audioCtx.state === "suspended") await audioCtx.resume();
 
     const videoStream = canvas.captureStream(60);
-    const dest = audioCtx.createMediaStreamDestination();
+    dest = audioCtx.createMediaStreamDestination();
     sourceNode.connect(dest);
-    combined = new MediaStream([...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    sourceConnected = true;
 
+    combined = new MediaStream([...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
     const chunks = [];
     const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 12000000 });
+
     recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
     const stopped = new Promise((resolve, reject) => {
       recorder.onstop = resolve;
-      recorder.onerror = e => reject(e.error || new Error("녹화 오류"));
+      recorder.onerror = e => reject(e.error || new Error("렌더링 녹화 오류"));
     });
 
     audio.pause();
     audio.currentTime = 0;
-    audio.volume = 1;
+    audio.volume = 1; // export is always at maximum volume
     vinylAngle = 0;
     lastAudioTime = 0;
 
     recorder.start(100);
     await audio.play();
 
-    await new Promise(resolve => {
-      let lastShown = -1;
+    await new Promise((resolve, reject) => {
       const tick = () => {
         if (audio.ended || audio.currentTime >= audio.duration - 0.03) {
           resolve();
           return;
         }
-        const sec = Math.floor(audio.currentTime);
-        if (sec !== lastShown) {
-          lastShown = sec;
-          exportStatus.textContent = `영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`;
-        }
+        exportStatus.textContent = `영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`;
         requestAnimationFrame(tick);
       };
       tick();
@@ -296,31 +350,19 @@ async function exportVideo() {
     combined = null;
 
     const rawBlob = new Blob(chunks, { type: mime });
-    if (rawBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
+    if (rawBlob.size < 10000) throw new Error("영상 렌더링 결과가 비어 있어");
 
-    const durationMs = audio.duration * 1000;
-
-    if (selectedFormat === "mp4") {
-      const mp4Blob = await convertWebMToMP4(rawBlob, durationMs);
-      downloadBlob(mp4Blob, "mp4");
-      exportStatus.textContent = "완료 · MP4 영상이 다운로드됐어";
-    } else {
-      exportStatus.textContent = "재생바 타임스탬프 보정 중…";
-      if (typeof ysFixWebmDuration === "function") {
-        await new Promise(resolve => ysFixWebmDuration(rawBlob, durationMs, fixedBlob => {
-          downloadBlob(fixedBlob, "webm");
-          resolve();
-        }));
-      } else {
-        downloadBlob(rawBlob, "webm");
-      }
-      exportStatus.textContent = "완료 · WebM 영상이 다운로드됐어";
-    }
+    // WebM is only an intermediate. The downloadable file is always MP4.
+    const mp4Blob = await convertWebmToMp4(rawBlob, audio.duration);
+    exportStatus.textContent = "MP4 완성 · 다운로드 준비 중…";
+    downloadBlob(mp4Blob, "mp4");
+    exportStatus.textContent = "완료 · 재생 바를 움직일 수 있는 MP4가 만들어졌어";
   } catch (err) {
     console.error(err);
-    exportStatus.textContent = `추출 오류 · ${err.message || "알 수 없는 오류"}`;
+    exportStatus.textContent = `추출 오류 · ${err && err.message ? err.message : "알 수 없는 오류"}`;
   } finally {
-    if (combined) combined.getTracks().forEach(t => t.stop());
+    try { if (combined) combined.getTracks().forEach(t => t.stop()); } catch {}
+    try { if (sourceConnected && sourceNode && typeof sourceNode.disconnect === "function") sourceNode.disconnect(dest); } catch {}
     try {
       audio.pause();
       audio.currentTime = oldTime;

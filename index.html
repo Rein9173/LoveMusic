@@ -80,11 +80,10 @@
           </label>
           <label>출력 형식
             <select id="formatInput">
-              <option value="mp4">MP4 (지원 시)</option>
-              <option value="webm">WebM</option>
+              <option value="mp4">MP4</option>
             </select>
           </label>
-          <div id="exportStatus" class="status">이미지와 음악을 넣어줘</div>
+          <div id="exportStatus" class="status">이미지와 음악을 넣어줘 · 영상은 MP4로 추출돼</div>
         </div>
       </aside>
     </section>
@@ -92,8 +91,6 @@
 <audio id="audio" crossorigin="anonymous"></audio>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.5/fix-webm-duration.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
