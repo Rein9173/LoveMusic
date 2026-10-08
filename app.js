@@ -160,7 +160,7 @@ async function exportVideo(){
 
     // 2. 파일 쓰기 및 FFmpeg 실행
     ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
-    await ffmpeg.run('-i', 'input.webm', '-c:v', 'copy', '-c:a', 'aac', '-movflags', 'faststart', 'output.mp4');
+    await ffmpeg.run('-i', 'input.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-movflags', 'faststart', 'output.mp4');
 
     // 3. 변환된 MP4 파일 읽기
     const mp4Data = ffmpeg.FS('readFile', 'output.mp4');
