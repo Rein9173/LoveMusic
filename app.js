@@ -125,7 +125,7 @@ resolutionInput.addEventListener("change",resizeCanvas);
 function supportedMimeFor(kind){
   if(!window.MediaRecorder)return null;
   const mp4=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4;codecs=avc1.4D401E,mp4a.40.2","video/mp4"];
-  const webm=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
+  const webm=["video/webm;codecs=h264,opus","video/webm;codecs=avc1,opus","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
   const list=kind==="mp4"?mp4:webm;return list.find(x=>MediaRecorder.isTypeSupported(x))||null;
 }
 function downloadBlob(blob,ext){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;const safe=(titleInput.value||"music-visualizer").replace(/[\\/:*?"<>|]/g,"_");a.download=`${safe}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000)}
@@ -146,7 +146,6 @@ async function exportVideo(){
     await new Promise(resolve=>{let lastShown=-1;const tick=()=>{if(audio.ended||audio.currentTime>=audio.duration-.03){resolve();return}const sec=Math.floor(audio.currentTime);if(sec!==lastShown){lastShown=sec;exportStatus.textContent=`영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`}requestAnimationFrame(tick)};tick()});
     if(recorder.state!=="inactive")recorder.stop();await stopped;combined.getTracks().forEach(t=>t.stop());
     
-    // FFmpeg를 이용해 재생바가 잘 움직이는 완벽한 MP4로 변환
     const webmBlob = new Blob(chunks, { type: mime });
     if (webmBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
 
@@ -155,18 +154,14 @@ async function exportVideo(){
     const { createFFmpeg, fetchFile } = FFmpeg;
     const ffmpeg = createFFmpeg({ log: false });
 
-    // 1. load() 바로 실행 (isLoaded 체크 제거)
     await ffmpeg.load();
 
-    // 2. 파일 쓰기 및 FFmpeg 실행
     ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
-    await ffmpeg.run('-i', 'input.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-movflags', 'faststart', 'output.mp4');
+    await ffmpeg.run('-i', 'input.webm', '-c:v', 'copy', '-c:a', 'aac', '-strict', '-2', '-movflags', '+faststart', 'output.mp4');
 
-    // 3. 변환된 MP4 파일 읽기
     const mp4Data = ffmpeg.FS('readFile', 'output.mp4');
     const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
 
-    // 4. 임시 파일 삭제 (0.8.3 호환을 위해 remove 또는 try-catch 적용)
     try {
       ffmpeg.FS('remove', 'input.webm');
       ffmpeg.FS('remove', 'output.mp4');
