@@ -6,7 +6,7 @@
   <title>Music Visualizer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,22 +14,29 @@
     <section class="toolbar">
       <div class="brand">MUSIC VISUALIZER</div>
       <div class="toolbar-actions">
-        <label class="file-button">
-          이미지
-          <input id="imageInput" type="file" accept="image/*">
-        </label>
-        <label class="file-button">
-          음악
-          <input id="audioInput" type="file" accept="audio/*">
-        </label>
+        <label class="file-button">이미지<input id="imageInput" type="file" accept="image/*"></label>
+        <label class="file-button">음악<input id="audioInput" type="file" accept="audio/*"></label>
         <button id="playButton" type="button" disabled>재생</button>
         <button id="exportButton" class="primary" type="button" disabled>영상 추출</button>
       </div>
     </section>
 
     <section class="workspace">
-      <div class="preview-wrap">
-        <canvas id="canvas" width="1920" height="1080"></canvas>
+      <div class="preview-column">
+        <div class="preview-wrap">
+          <canvas id="canvas" width="1920" height="1080"></canvas>
+        </div>
+        <div class="preview-controls">
+          <button id="previewPlayButton" type="button" disabled aria-label="재생/일시정지">▶</button>
+          <div class="seek-row">
+            <span id="currentTimeLabel">00:00</span>
+            <input id="seekInput" type="range" min="0" max="1000" value="0" step="1" aria-label="재생 위치">
+            <span id="durationLabel">00:00</span>
+          </div>
+          <div class="volume-control">
+            <span>VOL</span><input id="volumeInput" type="range" min="0" max="1" value="1" step="0.01" aria-label="볼륨">
+          </div>
+        </div>
       </div>
 
       <aside class="controls">
@@ -47,17 +54,19 @@
               <option value="serif">Serif</option>
             </select>
           </label>
+          <div class="size-grid">
+            <label>제목 크기<span><output id="titleSizeValue">62</output> px</span><input id="titleSizeInput" type="range" min="36" max="120" step="1" value="62"></label>
+            <label>아티스트 크기<span><output id="artistSizeValue">28</output> px</span><input id="artistSizeInput" type="range" min="16" max="64" step="1" value="28"></label>
+            <label>설명 크기<span><output id="subtitleSizeValue">20</output> px</span><input id="subtitleSizeInput" type="range" min="12" max="44" step="1" value="20"></label>
+          </div>
         </div>
 
         <div class="panel">
           <h2>VISUAL</h2>
-          <label>LP 회전 속도
-            <input id="speedInput" type="range" min="0.1" max="2" step="0.05" value="1">
-          </label>
-          <label>파형 높이
-            <input id="waveInput" type="range" min="0.4" max="1.8" step="0.05" value="1">
-          </label>
+          <label>LP 회전 속도<input id="speedInput" type="range" min="0.1" max="2" step="0.05" value="1"></label>
+          <label>파형 높이<input id="waveInput" type="range" min="0.4" max="1.8" step="0.05" value="1"></label>
           <label class="check"><input id="autoColorInput" type="checkbox" checked> 이미지 색상 자동 적용</label>
+          <p class="hint">이미지의 색과 밝기를 분석해 배경·폰트·포인트 색을 자동으로 맞춥니다.</p>
         </div>
 
         <div class="panel">
@@ -69,6 +78,11 @@
               <option value="1080x1080">1080 × 1080</option>
             </select>
           </label>
+          <label>출력 형식
+            <select id="formatInput">
+              <option value="mp4">MP4</option>
+            </select>
+          </label>
           <div id="exportStatus" class="status">이미지와 음악을 넣어줘</div>
         </div>
       </aside>
@@ -76,6 +90,7 @@
 
     <audio id="audio" crossorigin="anonymous"></audio>
   </main>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
