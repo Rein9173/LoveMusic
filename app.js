@@ -153,26 +153,47 @@ async function loadFFmpeg() {
   if (ffmpegLoading) return ffmpegLoading;
 
   ffmpegLoading = (async () => {
-    exportStatus.textContent = "MP4 변환 엔진을 불러오는 중…";
+    exportStatus.textContent = "MP4 변환 엔진을 불러오는 중… (처음 한 번은 약 30MB를 불러와)";
+
     const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([
-      import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/+esm"),
+      import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm"),
       import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/+esm")
     ]);
+
     const ffmpeg = new FFmpeg();
+    ffmpeg.on("log", ({ message }) => {
+      console.log("[FFmpeg]", message);
+    });
     ffmpeg.on("progress", ({ progress }) => {
-      if (isExporting) exportStatus.textContent = `MP4 변환 중… ${Math.round(progress * 100)}%`;
+      if (isExporting) {
+        exportStatus.textContent = `MP4 변환 중… ${Math.max(0, Math.min(100, Math.round(progress * 100)))}%`;
+      }
     });
+
+    // GitHub Pages처럼 앱과 FFmpeg가 서로 다른 출처에 있는 환경에서는
+    // FFmpeg 자체 worker를 명시하지 않으면 worker.js를 현재 페이지에서 찾다가
+    // 조용히 멈출 수 있다. worker.js는 CDN의 ESM 파일을 직접 사용한다.
     const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm")
-    });
+    const workerURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js";
+
+    const [coreURL, wasmURL] = await Promise.all([
+      toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+      toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm")
+    ]);
+
+    exportStatus.textContent = "MP4 변환 엔진을 시작하는 중…";
+    const loaded = await ffmpeg.load({ coreURL, wasmURL, classWorkerURL: workerURL });
+    if (!loaded && !ffmpeg.loaded) throw new Error("MP4 변환 엔진을 시작하지 못했어");
+
     ffmpegInstance = { ffmpeg, fetchFile };
     return ffmpegInstance;
   })();
 
   try {
     return await ffmpegLoading;
+  } catch (err) {
+    ffmpegInstance = null;
+    throw err;
   } finally {
     ffmpegLoading = null;
   }
@@ -180,10 +201,15 @@ async function loadFFmpeg() {
 
 async function convertWebmToMp4(webmBlob) {
   const { ffmpeg, fetchFile } = await loadFFmpeg();
-  exportStatus.textContent = "MP4로 변환 중…";
+  exportStatus.textContent = "MP4로 변환 중… 0%";
+
   await ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
-  await ffmpeg.exec([
+
+  const exitCode = await ffmpeg.exec([
+    "-threads", "2",
     "-i", "input.webm",
+    "-map", "0:v:0",
+    "-map", "0:a:0?",
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "18",
@@ -191,12 +217,19 @@ async function convertWebmToMp4(webmBlob) {
     "-c:a", "aac",
     "-b:a", "192k",
     "-movflags", "+faststart",
+    "-y",
     "output.mp4"
   ]);
+
+  if (exitCode !== 0) throw new Error(`FFmpeg 변환 실패 (코드 ${exitCode})`);
+
   const data = await ffmpeg.readFile("output.mp4");
+  if (!data || !data.length) throw new Error("MP4 파일이 생성되지 않았어");
+
   try { await ffmpeg.deleteFile("input.webm"); } catch {}
   try { await ffmpeg.deleteFile("output.mp4"); } catch {}
-  return new Blob([data.buffer], { type: "video/mp4" });
+
+  return new Blob([data], { type: "video/mp4" });
 }
 
 async function exportVideo() {
