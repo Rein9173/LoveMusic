@@ -151,19 +151,28 @@ async function exportVideo(){
     if (webmBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
 
     exportStatus.textContent = "MP4로 변환 중… (잠시만 기다려줘)";
+
     const { createFFmpeg, fetchFile } = FFmpeg;
     const ffmpeg = createFFmpeg({ log: false });
-    
-    if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
+    // 1. load() 바로 실행 (isLoaded 체크 제거)
+    await ffmpeg.load();
+
+    // 2. 파일 쓰기 및 FFmpeg 실행
     ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
     await ffmpeg.run('-i', 'input.webm', '-c:v', 'copy', '-c:a', 'aac', '-movflags', 'faststart', 'output.mp4');
 
+    // 3. 변환된 MP4 파일 읽기
     const mp4Data = ffmpeg.FS('readFile', 'output.mp4');
     const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
 
-    ffmpeg.FS('unlink', 'input.webm');
-    ffmpeg.FS('unlink', 'output.mp4');
+    // 4. 임시 파일 삭제 (0.8.3 호환을 위해 remove 또는 try-catch 적용)
+    try {
+      ffmpeg.FS('remove', 'input.webm');
+      ffmpeg.FS('remove', 'output.mp4');
+    } catch (e) {
+      console.warn("임시 파일 정리 중 알림:", e);
+    }
 
     downloadBlob(mp4Blob, "mp4");
     exportStatus.textContent = "완료 · MP4 영상이 성공적으로 다운로드됐어!";
