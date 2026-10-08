@@ -140,7 +140,7 @@ async function exportVideo(){
     setupAudioGraph();if(audioCtx.state==="suspended")await audioCtx.resume();
     const videoStream=canvas.captureStream(60),dest=audioCtx.createMediaStreamDestination();sourceNode.connect(dest);
     const combined=new MediaStream([...videoStream.getVideoTracks(),...dest.stream.getAudioTracks()]);
-    const chunks=[];const recorder=new MediaRecorder(combined,{mimeType,videoBitsPerSecond:12000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+    const chunks=[];const recorder=new MediaRecorder(combined,{mimeType:mime,videoBitsPerSecond:12000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
     const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=e=>reject(e.error||new Error("MediaRecorder 오류"))});
     audio.pause();audio.currentTime=0;audio.volume=1;vinylAngle=0;lastAudioTime=0;recorder.start(250);await audio.play();
     await new Promise(resolve=>{let lastShown=-1;const tick=()=>{if(audio.ended||audio.currentTime>=audio.duration-.03){resolve();return}const sec=Math.floor(audio.currentTime);if(sec!==lastShown){lastShown=sec;exportStatus.textContent=`영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`}requestAnimationFrame(tick)};tick()});
