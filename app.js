@@ -99,7 +99,7 @@ function render(){
   drawWave(tx,H*.61,tw,70*s);
   const barY=H*.76,tr=hexToRgb(textColor);ctx.fillStyle=`rgba(${tr.r},${tr.g},${tr.b},.18)`;ctx.fillRect(tx,barY,tw,Math.max(4,5*s));const progress=audio.duration?audio.currentTime/audio.duration:0;ctx.fillStyle=accent;ctx.fillRect(tx,barY,tw*clamp(progress,0,1),Math.max(4,5*s));
   ctx.font=`400 ${Math.max(13,18*s)}px ${fontFamily()}`;ctx.fillStyle=mutedColor;ctx.textAlign="left";ctx.fillText(formatTime(audio.currentTime),tx,barY+38*s);ctx.textAlign="center";ctx.fillText("-",tx+tw/2,barY+38*s);ctx.textAlign="right";ctx.fillText(formatTime(audio.duration),tx+tw,barY+38*s);ctx.textAlign="left";
-  if(!audio.paused&&!isExporting){const delta=Math.max(0,audio.currentTime-lastAudioTime);vinylAngle+=delta*Number(speedInput.value)*Math.PI/2}lastAudioTime=audio.currentTime;
+  if(!audio.paused){const delta=Math.max(0,audio.currentTime-lastAudioTime);vinylAngle+=delta*Number(speedInput.value)*Math.PI/2}lastAudioTime=audio.currentTime;
   if(!seeking){const p=audio.duration?audio.currentTime/audio.duration:0;seekInput.value=Math.round(p*1000)}
   currentTimeLabel.textContent=formatTime(audio.currentTime);durationLabel.textContent=formatTime(audio.duration);requestAnimationFrame(render);
 }
