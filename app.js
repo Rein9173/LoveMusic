@@ -124,15 +124,14 @@ resolutionInput.addEventListener("change",resizeCanvas);
 
 function getBestMimeType() {
   const types = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4',
     'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
     'video/webm'
   ];
   for (const t of types) {
     if (MediaRecorder.isTypeSupported(t)) return t;
   }
-  return '';
+  return 'video/webm';
 }
 
 function downloadBlob(blob, ext) {
@@ -155,8 +154,7 @@ async function exportVideo() {
   }
 
   const mime = getBestMimeType();
-  const isMp4Supported = mime.includes("mp4");
-  const extension = isMp4Supported ? "mp4" : "webm";
+  const extension = "webm";
 
   isExporting = true;
   exportButton.disabled = true;
@@ -214,18 +212,21 @@ async function exportVideo() {
     await stopped;
     combined.getTracks().forEach(t => t.stop());
 
-   const rawBlob = new Blob(chunks, { type: mime });
-  if (rawBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
+    const rawBlob = new Blob(chunks, { type: mime });
+    if (rawBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
 
-  exportStatus.textContent = "재생바 타임스탬프 보정 중…";
+    exportStatus.textContent = "재생바 타임스탬프 보정 중…";
+    const durationMs = audio.duration * 1000;
 
-  // 음악 전체 길이를 넘겨서 재생바 타임스탬프를 복구합니다
-  const durationMs = audio.duration * 1000;
-  ysFixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
-  downloadBlob(fixedBlob, extension);
-  exportStatus.textContent = `완료 · ${extension.toUpperCase()} 영상이 다운로드됐어!`;
-});
-return;
+    if (typeof ysFixWebmDuration === 'function') {
+      ysFixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
+        downloadBlob(fixedBlob, extension);
+        exportStatus.textContent = `완료 · 영상이 성공적으로 다운로드됐어!`;
+      });
+    } else {
+      downloadBlob(rawBlob, extension);
+      exportStatus.textContent = `완료 · 영상이 다운로드됐어!`;
+    }
 
   } catch (err) {
     console.error(err);
