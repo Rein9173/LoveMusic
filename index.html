@@ -22,17 +22,14 @@
           음악
           <input id="audioInput" type="file" accept="audio/*">
         </label>
-        <button id="exportButton" class="primary" disabled>영상 추출</button>
+        <button id="playButton" type="button" disabled>재생</button>
+        <button id="exportButton" class="primary" type="button" disabled>영상 추출</button>
       </div>
     </section>
 
     <section class="workspace">
       <div class="preview-wrap">
         <canvas id="canvas" width="1920" height="1080"></canvas>
-        <div id="emptyState" class="empty-state">
-          <div>이미지와 음악을 넣어줘</div>
-          <small>브라우저에서만 처리되며 파일은 서버에 업로드되지 않아</small>
-        </div>
       </div>
 
       <aside class="controls">
@@ -72,7 +69,7 @@
               <option value="1080x1080">1080 × 1080</option>
             </select>
           </label>
-          <div id="exportStatus" class="status">준비됨</div>
+          <div id="exportStatus" class="status">이미지와 음악을 넣어줘</div>
         </div>
       </aside>
     </section>

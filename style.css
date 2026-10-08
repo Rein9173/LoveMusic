@@ -12,18 +12,13 @@
 html, body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at 30% 35%, rgba(100,120,170,.16), transparent 34%),
-    radial-gradient(circle at 75% 50%, rgba(80,100,150,.08), transparent 36%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: Inter, "Noto Sans KR", sans-serif;
 }
 
 body { padding: 24px; }
-
 .app { max-width: 1500px; margin: 0 auto; }
-
 .toolbar {
   height: 64px;
   display: flex;
@@ -32,15 +27,8 @@ body { padding: 24px; }
   padding: 0 2px 14px;
   border-bottom: 1px solid var(--line);
 }
-
-.brand {
-  font-size: 13px;
-  letter-spacing: .22em;
-  color: #c7d0e7;
-}
-
+.brand { font-size: 13px; letter-spacing: .22em; color: #c7d0e7; }
 .toolbar-actions { display: flex; gap: 8px; }
-
 button, .file-button {
   border: 1px solid rgba(170,190,235,.25);
   background: rgba(20,28,45,.75);
@@ -51,121 +39,31 @@ button, .file-button {
   font: inherit;
   font-size: 12px;
 }
-
 .file-button input { display: none; }
-
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #071021;
-  font-weight: 600;
-}
-
+button.primary { background: var(--accent); border-color: var(--accent); color: #071021; font-weight: 600; }
 button:disabled { opacity: .35; cursor: not-allowed; }
-
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 290px;
-  gap: 18px;
-  margin-top: 18px;
-}
-
-.preview-wrap {
-  position: relative;
-  min-width: 0;
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--line);
-  background: #050912;
-  overflow: hidden;
-}
-
-#canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.empty-state {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  text-align: center;
-  color: #aab4ca;
-  pointer-events: none;
-  background: rgba(4,8,15,.32);
-  letter-spacing: .02em;
-}
-
-.empty-state small {
-  display: block;
-  margin-top: 10px;
-  color: #68748c;
-  font-size: 11px;
-}
-
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 18px; margin-top: 18px; }
+.preview-wrap { position: relative; min-width: 0; aspect-ratio: 16 / 9; border: 1px solid var(--line); background: #050912; overflow: hidden; }
+#canvas { width: 100%; height: 100%; display: block; }
 .controls { display: flex; flex-direction: column; gap: 12px; }
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  padding: 16px;
-}
-
-.panel h2 {
-  margin: 0 0 14px;
-  font-size: 10px;
-  letter-spacing: .18em;
-  color: #7f8ba5;
-  font-weight: 600;
-}
-
-.panel label {
-  display: block;
-  margin-bottom: 12px;
-  color: #aab4c8;
-  font-size: 11px;
-}
-
+.panel { background: var(--panel); border: 1px solid var(--line); padding: 16px; }
+.panel h2 { margin: 0 0 14px; font-size: 10px; letter-spacing: .18em; color: #7f8ba5; font-weight: 600; }
+.panel label { display: block; margin-bottom: 12px; color: #aab4c8; font-size: 11px; }
 .panel label:last-child { margin-bottom: 0; }
-
 input[type="text"], input:not([type]), select {
-  width: 100%;
-  margin-top: 6px;
-  padding: 9px 10px;
-  color: #e8edf8;
-  background: rgba(5,9,16,.72);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  outline: none;
-  font: inherit;
-  font-size: 12px;
+  width: 100%; margin-top: 6px; padding: 9px 10px; color: #e8edf8;
+  background: rgba(5,9,16,.72); border: 1px solid var(--line); border-radius: 3px;
+  outline: none; font: inherit; font-size: 12px;
 }
-
 input[type="range"] { width: 100%; accent-color: var(--accent); }
-
-.check {
-  display: flex !important;
-  align-items: center;
-  gap: 8px;
-}
-
+.check { display: flex !important; align-items: center; gap: 8px; }
 .check input { accent-color: var(--accent); }
-
-.status {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  color: #8f9bb2;
-  font-size: 11px;
-}
-
+.status { min-height: 34px; display: flex; align-items: center; color: #8f9bb2; font-size: 11px; }
 @media (max-width: 1000px) {
   body { padding: 12px; }
   .workspace { grid-template-columns: 1fr; }
   .controls { display: grid; grid-template-columns: repeat(3, 1fr); }
 }
-
 @media (max-width: 700px) {
   .toolbar { height: auto; align-items: flex-start; gap: 12px; flex-direction: column; }
   .toolbar-actions { flex-wrap: wrap; }
