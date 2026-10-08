@@ -214,12 +214,18 @@ async function exportVideo() {
     await stopped;
     combined.getTracks().forEach(t => t.stop());
 
-    const videoBlob = new Blob(chunks, { type: mime });
-    if (videoBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
+   const rawBlob = new Blob(chunks, { type: mime });
+  if (rawBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
 
-    exportStatus.textContent = "변환 중… (잠시만 기다려줘)";
-    downloadBlob(videoBlob, extension);
-    exportStatus.textContent = `완료 · ${extension.toUpperCase()} 영상이 다운로드됐어!`;
+  exportStatus.textContent = "재생바 타임스탬프 보정 중…";
+
+  // 음악 전체 길이를 넘겨서 재생바 타임스탬프를 복구합니다
+  const durationMs = audio.duration * 1000;
+  ysFixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
+  downloadBlob(fixedBlob, extension);
+  exportStatus.textContent = `완료 · ${extension.toUpperCase()} 영상이 다운로드됐어!`;
+});
+return;
 
   } catch (err) {
     console.error(err);
