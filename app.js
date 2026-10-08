@@ -188,7 +188,7 @@ async function createMp4Worker() {
   return ffmpegWorker;
 }
 
-function convertWebmToMp4(webmBlob, expectedDuration) {
+function convertWebmToMp4(webmBuffer, expectedDuration) {
   return new Promise(async (resolve, reject) => {
     let worker;
     try {
@@ -198,7 +198,8 @@ function convertWebmToMp4(webmBlob, expectedDuration) {
       return;
     }
 
-    const inputData = new Uint8Array(await webmBlob.arrayBuffer());
+    // Reuse the already-created ArrayBuffer instead of making another full copy of the WebM.
+    const inputData = new Uint8Array(webmBuffer);
     let finished = false;
     let lastError = "";
 
@@ -228,11 +229,11 @@ function convertWebmToMp4(webmBlob, expectedDuration) {
           arguments: [
             "-i", "input.webm",
             "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "20",
+            "-preset", "ultrafast",
+            "-crf", "24",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "128k",
             "-movflags", "+faststart",
             "-y", "output.mp4"
           ]
@@ -314,7 +315,13 @@ async function exportVideo() {
 
     combined = new MediaStream([...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
     const chunks = [];
-    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 12000000 });
+    // Keep the intermediate VP8 file small enough for ffmpeg.js MEMFS.
+    // ffmpeg.js keeps both input and output in memory, so a very high WebM bitrate
+    // can cause OOM before H.264 encoding even starts.
+    const [exportW, exportH] = resolutionInput.value.split("x").map(Number);
+    const pixels = exportW * exportH;
+    const videoBitrate = pixels >= 1080 * 1080 ? 4500000 : pixels >= 720 * 720 ? 3000000 : 2200000;
+    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: videoBitrate, audioBitsPerSecond: 128000 });
 
     recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
     const stopped = new Promise((resolve, reject) => {
@@ -354,8 +361,12 @@ async function exportVideo() {
       throw new Error(`중간 영상 코덱이 VP8이 아니야 (${rawBlob.type || "알 수 없음"})`);
     }
 
+    exportStatus.textContent = `중간 영상 준비 중… ${(rawBlob.size / 1024 / 1024).toFixed(1)} MB`;
+    // Read once, then release the Blob reference before FFmpeg starts. This avoids
+    // keeping both the Blob and its ArrayBuffer alive during the memory-heavy step.
+    const rawBuffer = await rawBlob.arrayBuffer();
     // WebM is only an intermediate. The downloadable file is always MP4.
-    const mp4Blob = await convertWebmToMp4(rawBlob, audio.duration);
+    const mp4Blob = await convertWebmToMp4(rawBuffer, audio.duration);
     exportStatus.textContent = "MP4 완성 · 다운로드 준비 중…";
     downloadBlob(mp4Blob, "mp4");
     exportStatus.textContent = "완료 · 재생 바를 움직일 수 있는 MP4가 만들어졌어";
