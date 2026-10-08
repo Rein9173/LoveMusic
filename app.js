@@ -1,3 +1,5 @@
+const { createFFmpeg, fetchFile } = FFmpeg;
+const ffmpeg = createFFmpeg({ log: false });
 const canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d");
 const audio=document.getElementById("audio");
 const imageInput=document.getElementById("imageInput"),audioInput=document.getElementById("audioInput");
@@ -146,16 +148,25 @@ async function exportVideo(){
     await new Promise(resolve=>{let lastShown=-1;const tick=()=>{if(audio.ended||audio.currentTime>=audio.duration-.03){resolve();return}const sec=Math.floor(audio.currentTime);if(sec!==lastShown){lastShown=sec;exportStatus.textContent=`영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`}requestAnimationFrame(tick)};tick()});
     if(recorder.state!=="inactive")recorder.stop();await stopped;combined.getTracks().forEach(t=>t.stop());
     
-    // 녹화된 데이터 추출 및 다운로드
-    let blob=new Blob(chunks,{type:mime});
-if(actual==="webm" && typeof ysFixWebmDuration==="function" && audio.duration){
-  blob = await ysFixWebmDuration(blob, audio.duration * 1000);
-}
-const ext=actual==="mp4"?"mp4":"webm";
-downloadBlob(blob,ext);
-    
-    exportStatus.textContent="완료 · 영상이 다운로드되었습니다.";
-  }catch(err){console.error(err);exportStatus.textContent="추출 중 오류가 발생했습니다.";try{audio.pause();audio.currentTime=oldTime;audio.volume=oldVolume;if(!oldPaused)await audio.play()}catch{}}
+    // FFmpeg를 이용해 재생바가 잘 움직이는 완벽한 MP4로 변환
+    const webmBlob = new Blob(chunks, { type: mime });
+    if (webmBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
+
+    exportStatus.textContent = "MP4로 변환 중… (잠시만 기다려줘)";
+    if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+    ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
+    await ffmpeg.run('-i', 'input.webm', '-c:v', 'copy', '-c:a', 'aac', '-movflags', 'faststart', 'output.mp4');
+
+    const mp4Data = ffmpeg.FS('readFile', 'output.mp4');
+    const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+
+    ffmpeg.FS('unlink', 'input.webm');
+    ffmpeg.FS('unlink', 'output.mp4');
+
+    downloadBlob(mp4Blob, "mp4");
+    exportStatus.textContent = "완료 · MP4 영상이 성공적으로 다운로드됐어!";
+  }catch(err){console.error(err);exportStatus.textContent=`추출 오류 · ${err.message||"알 수 없는 오류"}`;try{audio.pause();audio.currentTime=oldTime;audio.volume=oldVolume;if(!oldPaused)await audio.play()}catch{}}
   finally{audio.volume=oldVolume;isExporting=false;syncButtons()}
 }
 exportButton.addEventListener("click",exportVideo);
