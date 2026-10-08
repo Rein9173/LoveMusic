@@ -58,8 +58,14 @@ function drawVinyl(cx,cy,radius,angle){
 }
 function drawImageContain(img,x,y,w,h,pad=0){
   const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;if(!iw||!ih)return;
-  const boxW=Math.max(1,w-pad*2),boxH=Math.max(1,h-pad*2),scale=Math.min(boxW/iw,boxH/ih),dw=iw*scale,dh=ih*scale;
+  const boxW=Math.max(1,w-pad*2),boxH=Math.max(1,h-pad*2);
+  // Always fill the target box while preserving the original aspect ratio.
+  // This makes every uploaded image appear as a clean 1:1 crop instead of stretching or letterboxing.
+  const scale=Math.max(boxW/iw,boxH/ih),dw=iw*scale,dh=ih*scale;
+  ctx.save();
+  ctx.beginPath();ctx.rect(x+pad,y+pad,boxW,boxH);ctx.clip();
   ctx.drawImage(img,x+pad+(boxW-dw)/2,y+pad+(boxH-dh)/2,dw,dh);
+  ctx.restore();
 }
 function drawCover(x,y,w,h){
   if(!cover)return;ctx.save();ctx.beginPath();ctx.roundRect(x,y,w,h,Math.min(34,w*.055));ctx.clip();
