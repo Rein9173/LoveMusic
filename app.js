@@ -131,9 +131,9 @@ function supportedMimeFor(kind){
 function downloadBlob(blob,ext){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;const safe=(titleInput.value||"music-visualizer").replace(/[\\/:*?"<>|]/g,"_");a.download=`${safe}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000)}
 async function exportVideo(){
   if(!audio.src||!cover||isExporting)return;
-  if(!window.MediaRecorder||!canvas.captureStream){exportStatus.textContent="이 브라우저는 영상 추출을 지원하지 않아";return}
+  if(!window.MediaRecorder||!canvas.captureStream){exportStatus.textContent="영상 추출 미지원 브라우저입니다.";return}
   const requested=formatInput.value,requestedMime=supportedMimeFor(requested);let actual=requested;
-  if(!requestedMime&&requested==="mp4"){actual="webm"}const mime=requestedMime||supportedMimeFor("webm");if(!mime){exportStatus.textContent="지원되는 영상 형식을 찾지 못했어";return}
+  if(!requestedMime&&requested==="mp4"){actual="webm"}const mime=requestedMime||supportedMimeFor("webm");if(!mime){exportStatus.textContent="지원되는 영상 형식을 찾지 못했습니다.";return}
   isExporting=true;exportButton.disabled=true;playButton.disabled=true;previewPlayButton.disabled=true;exportStatus.textContent="영상 렌더링 준비 중…";
   const oldTime=audio.currentTime,oldVolume=audio.volume,oldPaused=audio.paused;
   try{
@@ -141,14 +141,21 @@ async function exportVideo(){
     const videoStream=canvas.captureStream(60),dest=audioCtx.createMediaStreamDestination();sourceNode.connect(dest);
     const combined=new MediaStream([...videoStream.getVideoTracks(),...dest.stream.getAudioTracks()]);
     const chunks=[];const recorder=new MediaRecorder(combined,{mimeType:mime,videoBitsPerSecond:12000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-    const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=e=>reject(e.error||new Error("MediaRecorder 오류"))});
-    audio.pause();audio.currentTime=0;audio.volume=1;vinylAngle=0;lastAudioTime=0;recorder.start(250);await audio.play();
+    const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=e=>reject(e.error||new Error("녹화 오류"))});
+    audio.pause();audio.currentTime=0;audio.volume=1;vinylAngle=0;lastAudioTime=0;recorder.start(100);await audio.play();
     await new Promise(resolve=>{let lastShown=-1;const tick=()=>{if(audio.ended||audio.currentTime>=audio.duration-.03){resolve();return}const sec=Math.floor(audio.currentTime);if(sec!==lastShown){lastShown=sec;exportStatus.textContent=`영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`}requestAnimationFrame(tick)};tick()});
     if(recorder.state!=="inactive")recorder.stop();await stopped;combined.getTracks().forEach(t=>t.stop());
-    const blob=new Blob(chunks,{type:mime});if(blob.size<10000)throw new Error("영상 데이터가 충분히 생성되지 않았어");
-    const ext=actual==="mp4"?"mp4":"webm";downloadBlob(blob,ext);
-    exportStatus.textContent=actual==="mp4"?"완료 · MP4 영상이 다운로드됐어":requested==="mp4"?"완료 · 이 브라우저는 MP4를 지원하지 않아 WebM으로 저장했어":"완료 · WebM 영상이 다운로드됐어";
-  }catch(err){console.error(err);exportStatus.textContent=`추출 오류 · ${err.message||"알 수 없는 오류"}`;try{audio.pause();audio.currentTime=oldTime;audio.volume=oldVolume;if(!oldPaused)await audio.play()}catch{}}
+    
+    // 녹화된 데이터 추출 및 다운로드
+    let blob=new Blob(chunks,{type:mime});
+if(actual==="webm" && typeof ysFixWebmDuration==="function" && audio.duration){
+  blob = await ysFixWebmDuration(blob, audio.duration * 1000);
+}
+const ext=actual==="mp4"?"mp4":"webm";
+downloadBlob(blob,ext);
+    
+    exportStatus.textContent="완료 · 영상이 다운로드되었습니다.";
+  }catch(err){console.error(err);exportStatus.textContent="추출 중 오류가 발생했습니다.";try{audio.pause();audio.currentTime=oldTime;audio.volume=oldVolume;if(!oldPaused)await audio.play()}catch{}}
   finally{audio.volume=oldVolume;isExporting=false;syncButtons()}
 }
 exportButton.addEventListener("click",exportVideo);
