@@ -6,7 +6,7 @@
   <title>Music Visualizer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Dancing+Script:wght@400;500;600;700&family=Gowun+Batang&family=Inter:wght@400;500;600;700&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -49,14 +49,9 @@
             <select id="fontInput">
               <option value="Inter">Inter</option>
               <option value="Noto Sans KR">Noto Sans KR</option>
-              <option value="Noto Serif KR">Noto Serif KR</option>
-              <option value="Gowun Batang">Gowun Batang</option>
-              <option value="Playfair Display">Playfair Display</option>
-              <option value="Cormorant Garamond">Cormorant Garamond</option>
-              <option value="Caveat">Caveat · 손글씨</option>
-              <option value="Dancing Script">Dancing Script · 필기체</option>
-              <option value="Nanum Pen Script">Nanum Pen Script · 붓펜</option>
-              <option value="Space Mono">Space Mono</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Arial">Arial</option>
+              <option value="serif">Serif</option>
             </select>
           </label>
           <div class="size-grid">
@@ -85,7 +80,7 @@
           </label>
           <label>출력 형식
             <select id="formatInput">
-              <option value="mp4">MP4</option>
+              <option value="mp4">MP4 (지원 시)</option>
               <option value="webm">WebM</option>
             </select>
           </label>
@@ -97,6 +92,7 @@
 <audio id="audio" crossorigin="anonymous"></audio>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.5/fix-webm-duration.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
