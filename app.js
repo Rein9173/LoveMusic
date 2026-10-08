@@ -168,19 +168,17 @@ let ffmpegWorkerURL = null;
 async function createMp4Worker() {
   if (ffmpegWorker) return ffmpegWorker;
 
-  // ffmpeg.js 4.2.9003 provides a dedicated MP4 worker with H.264/AAC/MP4 support.
-  // We fetch it and create a same-origin Blob worker, avoiding GitHub Pages' cross-origin Worker restriction.
-  const workerSourceURL = "https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-worker-mp4.js";
-  exportStatus.textContent = "MP4 변환 엔진 준비 중… (처음 한 번만 오래 걸릴 수 있어)";
+  // ffmpeg.js must run in a same-origin Worker on GitHub Pages.
+  // The CDN worker itself is wrapped in a Blob worker, and the MP4 module is
+  // loaded with importScripts so the worker does not depend on relative paths.
+  const workerURL = "https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-worker-mp4.js";
+  const moduleURL = "https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-mp4.js";
+  exportStatus.textContent = "MP4 변환 엔진 준비 중…";
 
-  const response = await fetch(workerSourceURL, { cache: "force-cache" });
+  const response = await fetch(workerURL, { cache: "force-cache" });
   if (!response.ok) throw new Error(`MP4 변환 엔진을 불러오지 못했어 (${response.status})`);
   let source = await response.text();
-
-  // Some builds reference ffmpeg-mp4.js relative to the worker file.
-  // Make any such reference absolute so the Blob worker can still load it.
-  const moduleURL = "https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-mp4.js";
-  source = source.replace(/ffmpeg-mp4\.js/g, moduleURL);
+  source = source.replace(/importScripts\((['"])ffmpeg-mp4\.js\1\)/, `importScripts("${moduleURL}")`);
 
   const blob = new Blob([source], { type: "application/javascript" });
   ffmpegWorkerURL = URL.createObjectURL(blob);
@@ -188,7 +186,7 @@ async function createMp4Worker() {
   return ffmpegWorker;
 }
 
-function convertWebmToMp4(webmBuffer, expectedDuration) {
+function convertWebmToMp4(webmBlob, expectedDuration) {
   return new Promise(async (resolve, reject) => {
     let worker;
     try {
@@ -198,8 +196,7 @@ function convertWebmToMp4(webmBuffer, expectedDuration) {
       return;
     }
 
-    // Reuse the already-created ArrayBuffer instead of making another full copy of the WebM.
-    const inputData = new Uint8Array(webmBuffer);
+    const inputData = new Uint8Array(await webmBlob.arrayBuffer());
     let finished = false;
     let lastError = "";
 
@@ -229,11 +226,11 @@ function convertWebmToMp4(webmBuffer, expectedDuration) {
           arguments: [
             "-i", "input.webm",
             "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "24",
+            "-preset", "veryfast",
+            "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
-            "-b:a", "128k",
+            "-b:a", "192k",
             "-movflags", "+faststart",
             "-y", "output.mp4"
           ]
@@ -315,13 +312,7 @@ async function exportVideo() {
 
     combined = new MediaStream([...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
     const chunks = [];
-    // Keep the intermediate VP8 file small enough for ffmpeg.js MEMFS.
-    // ffmpeg.js keeps both input and output in memory, so a very high WebM bitrate
-    // can cause OOM before H.264 encoding even starts.
-    const [exportW, exportH] = resolutionInput.value.split("x").map(Number);
-    const pixels = exportW * exportH;
-    const videoBitrate = pixels >= 1080 * 1080 ? 4500000 : pixels >= 720 * 720 ? 3000000 : 2200000;
-    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: videoBitrate, audioBitsPerSecond: 128000 });
+    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 6000000 });
 
     recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
     const stopped = new Promise((resolve, reject) => {
@@ -335,7 +326,7 @@ async function exportVideo() {
     vinylAngle = 0;
     lastAudioTime = 0;
 
-    recorder.start(100);
+    recorder.start(250);
     await audio.play();
 
     await new Promise((resolve, reject) => {
@@ -357,16 +348,9 @@ async function exportVideo() {
 
     const rawBlob = new Blob(chunks, { type: mime });
     if (rawBlob.size < 10000) throw new Error("영상 렌더링 결과가 비어 있어");
-    if (!rawBlob.type.includes("vp8")) {
-      throw new Error(`중간 영상 코덱이 VP8이 아니야 (${rawBlob.type || "알 수 없음"})`);
-    }
 
-    exportStatus.textContent = `중간 영상 준비 중… ${(rawBlob.size / 1024 / 1024).toFixed(1)} MB`;
-    // Read once, then release the Blob reference before FFmpeg starts. This avoids
-    // keeping both the Blob and its ArrayBuffer alive during the memory-heavy step.
-    const rawBuffer = await rawBlob.arrayBuffer();
     // WebM is only an intermediate. The downloadable file is always MP4.
-    const mp4Blob = await convertWebmToMp4(rawBuffer, audio.duration);
+    const mp4Blob = await convertWebmToMp4(rawBlob, audio.duration);
     exportStatus.textContent = "MP4 완성 · 다운로드 준비 중…";
     downloadBlob(mp4Blob, "mp4");
     exportStatus.textContent = "완료 · 재생 바를 움직일 수 있는 MP4가 만들어졌어";
@@ -393,3 +377,5 @@ updateSizeLabels();
 resizeCanvas();
 audio.volume = 1;
 render();
+
+window.addEventListener("beforeunload", () => { try { if (ffmpegWorker) ffmpegWorker.terminate(); } catch {} try { if (ffmpegWorkerURL) URL.revokeObjectURL(ffmpegWorkerURL); } catch {} });
