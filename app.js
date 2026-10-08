@@ -122,130 +122,81 @@ autoColorInput.addEventListener("change",()=>{if(autoColorInput.checked&&cover)e
 resolutionInput.addEventListener("change",resizeCanvas);
 [titleInput,artistInput,subtitleInput,fontInput,speedInput,waveInput,titleSizeInput,artistSizeInput,subtitleSizeInput].forEach(el=>el.addEventListener("input",()=>{updateSizeLabels()}));
 
-function getBestMimeType() {
-  const types = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm'
-  ];
-  for (const t of types) {
-    if (MediaRecorder.isTypeSupported(t)) return t;
-  }
-  return 'video/webm';
-}
+function downloadBlob(blob,ext){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;const safe=(titleInput.value||"music-visualizer").replace(/[\\/:*?"<>|]/g,"_");a.download=`${safe}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000)}
 
-function downloadBlob(blob, ext) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  const safe = (titleInput.value || "music-visualizer").replace(/[\\/:*?"<>|]/g, "_");
-  a.download = `${safe}.${ext}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
-}
+async function exportVideo(){
+  if(!audio.src||!cover||isExporting)return;
+  if(!window.MediaRecorder||!canvas.captureStream){exportStatus.textContent="영상 추출 미지원 브라우저입니다.";return}
 
-async function exportVideo() {
-  if (!audio.src || !cover || isExporting) return;
-  if (!window.MediaRecorder || !canvas.captureStream) {
-    exportStatus.textContent = "영상 추출 미지원 브라우저입니다.";
-    return;
-  }
+  isExporting=true;exportButton.disabled=true;playButton.disabled=true;previewPlayButton.disabled=true;exportStatus.textContent="영상 렌더링 중…";
+  const oldTime=audio.currentTime,oldVolume=audio.volume,oldPaused=audio.paused;
 
-  const mime = getBestMimeType();
-  const extension = "webm";
+  try{
+    setupAudioGraph();if(audioCtx.state==="suspended")await audioCtx.resume();
+    const videoStream=canvas.captureStream(60),dest=audioCtx.createMediaStreamDestination();sourceNode.connect(dest);
+    const combined=new MediaStream([...videoStream.getVideoTracks(),...dest.stream.getAudioTracks()]);
+    const chunks=[];
 
-  isExporting = true;
-  exportButton.disabled = true;
-  playButton.disabled = true;
-  previewPlayButton.disabled = true;
-  exportStatus.textContent = "영상 렌더링 준비 중…";
+    const recorder=new MediaRecorder(combined,{videoBitsPerSecond:12000000});
+    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+    const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=e=>reject(e.error||new Error("녹화 오류"))});
 
-  const oldTime = audio.currentTime, oldVolume = audio.volume, oldPaused = audio.paused;
+    audio.pause();audio.currentTime=0;audio.volume=1;vinylAngle=0;lastAudioTime=0;recorder.start(100);await audio.play();
 
-  try {
-    setupAudioGraph();
-    if (audioCtx.state === "suspended") await audioCtx.resume();
-
-    const videoStream = canvas.captureStream(60);
-    const dest = audioCtx.createMediaStreamDestination();
-    sourceNode.connect(dest);
-
-    const combined = new MediaStream([...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
-    const chunks = [];
-    const recorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 12000000 });
-
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    const stopped = new Promise((resolve, reject) => {
-      recorder.onstop = resolve;
-      recorder.onerror = e => reject(e.error || new Error("녹화 오류"));
-    });
-
-    audio.pause();
-    audio.currentTime = 0;
-    audio.volume = 1;
-    vinylAngle = 0;
-    lastAudioTime = 0;
-
-    recorder.start(100);
-    await audio.play();
-
-    await new Promise(resolve => {
-      let lastShown = -1;
-      const tick = () => {
-        if (audio.ended || audio.currentTime >= audio.duration - 0.03) {
-          resolve();
-          return;
-        }
-        const sec = Math.floor(audio.currentTime);
-        if (sec !== lastShown) {
-          lastShown = sec;
-          exportStatus.textContent = `영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`;
-        }
-        requestAnimationFrame(tick);
+    await new Promise(resolve=>{
+      let lastShown=-1;
+      const tick=()=>{
+        if(audio.ended||audio.currentTime>=audio.duration-.03){resolve();return}
+        const sec=Math.floor(audio.currentTime);
+        if(sec!==lastShown){lastShown=sec;exportStatus.textContent=`영상 렌더링 중… ${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`}
+        requestAnimationFrame(tick)
       };
-      tick();
+      tick()
     });
 
-    if (recorder.state !== "inactive") recorder.stop();
-    await stopped;
-    combined.getTracks().forEach(t => t.stop());
+    if(recorder.state!=="inactive")recorder.stop();await stopped;combined.getTracks().forEach(t=>t.stop());
 
-    const rawBlob = new Blob(chunks, { type: mime });
+    const rawBlob = new Blob(chunks, { type: 'video/webm' });
     if (rawBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
 
-    exportStatus.textContent = "재생바 타임스탬프 보정 중…";
-    const durationMs = audio.duration * 1000;
+    exportStatus.textContent = "MP4로 변환 중… (잠시만 기다려줘)";
 
-    if (typeof ysFixWebmDuration === 'function') {
-      ysFixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
-        downloadBlob(fixedBlob, extension);
-        exportStatus.textContent = `완료 · 영상이 성공적으로 다운로드됐어!`;
-      });
-    } else {
-      downloadBlob(rawBlob, extension);
-      exportStatus.textContent = `완료 · 영상이 다운로드됐어!`;
-    }
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: false });
 
-  } catch (err) {
-    console.error(err);
-    exportStatus.textContent = `추출 오류 · ${err.message || "알 수 없는 오류"}`;
-  } finally {
+    await ffmpeg.load();
+    ffmpeg.FS('writeFile', 'input.webm', await fetchFile(rawBlob));
+
+    // H.264 인코딩(-c:v libx264) + yuv420p 픽셀포맷 + faststart(재생바 정보 이동)
+    await ffmpeg.run(
+      '-i', 'input.webm',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-movflags', '+faststart',
+      'output.mp4'
+    );
+
+    const mp4Data = ffmpeg.FS('readFile', 'output.mp4');
+    const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+
     try {
-      audio.pause();
-      audio.currentTime = oldTime;
-      audio.volume = oldVolume;
-      if (!oldPaused) await audio.play();
-    } catch {}
-    audio.volume = oldVolume;
-    isExporting = false;
-    syncButtons();
+      ffmpeg.FS('remove', 'input.webm');
+      ffmpeg.FS('remove', 'output.mp4');
+    } catch (e) {}
+
+    downloadBlob(mp4Blob, "mp4");
+    exportStatus.textContent = "완료 · MP4 영상이 성공적으로 다운로드됐어!";
+
+  }catch(err){
+    console.error(err);
+    exportStatus.textContent=`추출 오류 · ${err.message||"알 수 없는 오류"}`;
+    try{audio.pause();audio.currentTime=oldTime;audio.volume=oldVolume;if(!oldPaused)await audio.play()}catch{}
+  }finally{
+    audio.volume=oldVolume;isExporting=false;syncButtons()
   }
 }
 
-exportButton.addEventListener("click", exportVideo);
-updateSizeLabels();
-resizeCanvas();
-audio.volume = 1;
-render();
+exportButton.addEventListener("click",exportVideo);
+updateSizeLabels();resizeCanvas();audio.volume=1;render();
