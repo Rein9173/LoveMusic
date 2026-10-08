@@ -69,7 +69,13 @@
               <option value="1080x1080">1080 × 1080</option>
             </select>
           </label>
-          <div id="exportStatus" class="status">이미지와 음악을 넣어줘</div>
+          <label>출력 형식
+            <select id="exportFormatInput">
+              <option value="mp4">MP4 (지원 시)</option>
+              <option value="webm">WebM</option>
+            </select>
+          </label>
+          <div class="transport"><input id="seekInput" type="range" min="0" max="1000" value="0" step="1" aria-label="재생 위치"><div class="transport-row"><span id="currentTimeLabel">00:00</span><span id="durationLabel">00:00</span></div><label>볼륨<input id="volumeInput" type="range" min="0" max="1" value="1" step="0.01"></label></div><div id="exportStatus" class="status">이미지와 음악을 넣어줘</div>
         </div>
       </aside>
     </section>
