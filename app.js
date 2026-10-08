@@ -123,15 +123,10 @@ resolutionInput.addEventListener("change",resizeCanvas);
 [titleInput,artistInput,subtitleInput,fontInput,speedInput,waveInput,titleSizeInput,artistSizeInput,subtitleSizeInput].forEach(el=>el.addEventListener("input",()=>{updateSizeLabels()}));
 
 function getBestMimeType() {
-  const types = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm'
-  ];
-  for (const t of types) {
-    if (MediaRecorder.isTypeSupported(t)) return t;
-  }
-  return 'video/webm';
+  // The bundled ffmpeg.js MP4 build can decode VP8, but this build does not
+  // include a VP9 decoder. Never let MediaRecorder silently choose VP9 here.
+  const type = 'video/webm;codecs=vp8,opus';
+  return MediaRecorder.isTypeSupported(type) ? type : null;
 }
 
 function downloadBlob(blob, ext) {
@@ -293,6 +288,10 @@ async function exportVideo() {
   }
 
   const mime = getBestMimeType();
+  if (!mime) {
+    exportStatus.textContent = "이 브라우저에서는 MP4 변환용 VP8 녹화를 지원하지 않아";
+    return;
+  }
   isExporting = true;
   exportButton.disabled = true;
   playButton.disabled = true;
@@ -351,6 +350,9 @@ async function exportVideo() {
 
     const rawBlob = new Blob(chunks, { type: mime });
     if (rawBlob.size < 10000) throw new Error("영상 렌더링 결과가 비어 있어");
+    if (!rawBlob.type.includes("vp8")) {
+      throw new Error(`중간 영상 코덱이 VP8이 아니야 (${rawBlob.type || "알 수 없음"})`);
+    }
 
     // WebM is only an intermediate. The downloadable file is always MP4.
     const mp4Blob = await convertWebmToMp4(rawBlob, audio.duration);
