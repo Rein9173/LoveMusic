@@ -1,5 +1,3 @@
-const { createFFmpeg, fetchFile } = FFmpeg;
-const ffmpeg = createFFmpeg({ log: false });
 const canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d");
 const audio=document.getElementById("audio");
 const imageInput=document.getElementById("imageInput"),audioInput=document.getElementById("audioInput");
@@ -153,6 +151,9 @@ async function exportVideo(){
     if (webmBlob.size < 10000) throw new Error("영상 데이터가 충분히 생성되지 않았어");
 
     exportStatus.textContent = "MP4로 변환 중… (잠시만 기다려줘)";
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: false });
+    
     if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
     ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
